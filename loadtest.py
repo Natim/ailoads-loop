@@ -1,54 +1,58 @@
-import random
+import hmac
 import json
 import os
+import random
 from base64 import b64encode
 import uuid
 from urllib.parse import urlparse
 
 from fxa.core import Client
-from fxa.tests.utils import TestEmailAccount
+from fxa import errors
 from fxa.plugins.requests import FxABrowserIDAuth
 
 from requests_hawk import HawkAuth
 from ailoads.fmwk import scenario, requests
 
+# Read configuration from env
+SP_URL = os.getenv('LOOP_SP_URL', "https://call.stage.mozaws.net/")
+SERVER_URL = os.getenv('LOOP_SERVER_URL', "https://loop.stage.mozaws.net:443")
+FXA_URL = os.getenv("LOOP_FXA_URL", "https://api.accounts.firefox.com/v1")
+FXA_USER_SALT = os.getenv("LOOP_FXA_USER_SALT")
 
-SP_URL = os.getenv('LOOP_SP_URL',
-                   "https://call.stage.mozaws.net/")
-SERVER_URL = os.getenv('LOOP_SERVER_URL',
-                       "https://loop.stage.mozaws.net:443")
-DEFAULT_FXA_URL = os.getenv("LOOP_FXA_URL",
-                            "https://api.accounts.firefox.com/v1")
+# Fine loadtest configuration
 MAX_NUMBER_OF_PEOPLE_JOINING = 5
 PERCENTAGE_OF_REFRESH = 50
 PERCENTAGE_OF_MANUAL_LEAVE = 60
 PERCENTAGE_OF_MANUAL_ROOM_DELETE = 80
 PERCENTAGE_OF_ROOM_CONTEXT = 75
 
+# Constants
+FXA_ERROR_ACCOUNT_EXISTS = 101
+
 
 def picked(percent):
+    """Should we stay or should we go?"""
     return random.randint(0, 100) < percent
 
 
 class FXAUser(object):
     def __init__(self):
-        self.server = DEFAULT_FXA_URL
-        self.password = uuid.uuid4().hex
+        self.server = FXA_URL
+        self.password = hmac.new(FXA_USER_SALT, "loop").hexdigest()
         self.email = "loop-%s@restmail.net" % self.password
         self.auth = self.get_auth()
         self.hawk_auth = None
 
     def get_auth(self):
-        acct = TestEmailAccount(self.email)
         client = Client(self.server)
-        session = client.create_account(self.email,
-                                        password=self.password)
+        try:
+            client.create_account(self.email,
+                                  password=self.password,
+                                  preVerified=True)
+        except errors.ClientError as e:
+            if e.errno != FXA_ERROR_ACCOUNT_EXISTS:
+                raise
 
-        def is_verify_email(m):
-            return "x-verify-code" in m["headers"]
-
-        message = acct.wait_for_email(is_verify_email)
-        session.verify_email_code(message["headers"]["x-verify-code"])
         url = urlparse(SERVER_URL)
         audience = "%s://%s" % (url.scheme, url.hostname)
 
@@ -60,6 +64,7 @@ class FXAUser(object):
 
 
 _CONNECTIONS = {}
+
 
 def get_connection(id=None):
     if id is None or id not in _CONNECTIONS:
@@ -189,12 +194,14 @@ def setup_call():
 
     # 2. initiate call
     data = {"callType": "audio-video", "calleeId": conn.user.email}
-    resp = conn.post('/calls', data)
-    call_data = resp.json()
+    # resp = conn.post('/calls', data)
+    # resp.json()  # Call data
+    conn.post('/calls', data)
 
     # 3. list pending calls
-    resp = conn.get('/calls?version=200')
-    calls = resp.json()['calls']
+    # resp = conn.get('/calls?version=200')
+    # calls = resp.json()['calls']  # Calls data
+    conn.get('/calls?version=200')
 
 
 if __name__ == '__main__':
