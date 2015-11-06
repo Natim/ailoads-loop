@@ -1,3 +1,4 @@
+import base64
 import hmac
 import json
 import os
@@ -16,8 +17,13 @@ from ailoads.fmwk import scenario, requests
 # Read configuration from env
 SP_URL = os.getenv('LOOP_SP_URL', "https://call.stage.mozaws.net/")
 SERVER_URL = os.getenv('LOOP_SERVER_URL', "https://loop.stage.mozaws.net:443")
-FXA_URL = os.getenv("LOOP_FXA_URL", "https://api.accounts.firefox.com/v1")
+FXA_URL = os.getenv("LOOP_FXA_URL", "https://api-accounts.stage.mozaws.net/v1")
 FXA_USER_SALT = os.getenv("LOOP_FXA_USER_SALT")
+
+if FXA_USER_SALT:
+    FXA_USER_SALT = FXA_USER_SALT.encode('utf-8')
+else:
+    FXA_USER_SALT = base64.urlsafe_b64encode(os.urandom(36))
 
 # Fine loadtest configuration
 MAX_NUMBER_OF_PEOPLE_JOINING = 5
@@ -29,22 +35,30 @@ PERCENTAGE_OF_ROOM_CONTEXT = 75
 # Constants
 FXA_ERROR_ACCOUNT_EXISTS = 101
 
+ACCOUNT_CREATED = False
+
 
 def picked(percent):
     """Should we stay or should we go?"""
-    return random.randint(0, 100) < percent
+    return random.randint(0, 100) <= percent
 
 
 class FXAUser(object):
     def __init__(self):
         self.server = FXA_URL
-        self.password = hmac.new(FXA_USER_SALT, "loop").hexdigest()
+        self.password = hmac.new(FXA_USER_SALT, b"loop").hexdigest()
         self.email = "loop-%s@restmail.net" % self.password
         self.auth = self.get_auth()
         self.hawk_auth = None
 
     def get_auth(self):
+        global ACCOUNT_CREATED
+
         client = Client(self.server)
+
+        if ACCOUNT_CREATED:
+            return ACCOUNT_CREATED
+
         try:
             client.create_account(self.email,
                                   password=self.password,
@@ -56,11 +70,13 @@ class FXAUser(object):
         url = urlparse(SERVER_URL)
         audience = "%s://%s" % (url.scheme, url.hostname)
 
-        return FxABrowserIDAuth(
+        ACCOUNT_CREATED = FxABrowserIDAuth(
             self.email,
             password=self.password,
             audience=audience,
             server_url=self.server)
+
+        return ACCOUNT_CREATED
 
 
 _CONNECTIONS = {}
