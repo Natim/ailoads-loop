@@ -1,17 +1,18 @@
 HERE = $(shell pwd)
-BIN = $(HERE)/bin
+BIN = $(HERE)/venv/bin
 PYTHON = $(BIN)/python3.4
 
 INSTALL = $(BIN)/pip install
 
+LOOP_FXA_USER_SALT = 0EvBb1DFqPkgrSruK8qYxeSE-FNMvwxBagbSSqq8w-v6gL7g
 
 .PHONY: all test build
 
 all: build test
 
 $(PYTHON):
-	$(shell basename $(PYTHON)) -m venv $(VTENV_OPTS) .
-	$(BIN)/pip install requests requests_hawk PyFxA
+	$(shell basename $(PYTHON)) -m venv $(VTENV_OPTS) venv
+	$(BIN)/pip install requests requests_hawk PyFxA flake8
 	$(BIN)/pip install https://github.com/tarekziade/ailoads/archive/master.zip
 build: $(PYTHON)
 
@@ -20,13 +21,13 @@ init:
 
 test: build
 	$(BIN)/flake8 loadtest.py
-	$(BIN)/ailoads -v -d 30
+	LOOP_FXA_USER_SALT=$(LOOP_FXA_USER_SALT) $(BIN)/ailoads -v -d 30
 
 clean:
-	rm -fr bin/ include/ lib/ pip-selfcheck.json
+	rm -fr venv/ __pycache__/
 
-build_docker:
+docker-build:
 	docker build -t loop/loadtest .
 
-run_docker:
+docker-run:
 	docker run -e LOOP_DURATION=30 -e LOOP_NB_USERS=4 loop/loadtest
