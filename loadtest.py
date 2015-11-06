@@ -40,7 +40,7 @@ ACCOUNT_CREATED = False
 
 def picked(percent):
     """Should we stay or should we go?"""
-    return random.randint(0, 100) <= percent
+    return random.randint(0, 100) < percent
 
 
 class FXAUser(object):
